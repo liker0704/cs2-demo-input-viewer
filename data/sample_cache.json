@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "player_id": "76561198012345678",
+    "player_name": "ProPlayer",
+    "tick_range": [0, 5000],
+    "tick_rate": 64
+  },
+  "inputs": {
+    "1000": {
+      "tick": 1000,
+      "keys": ["W"],
+      "mouse": [],
+      "subtick": {"W": 0.0}
+    },
+    "1001": {
+      "tick": 1001,
+      "keys": ["W", "A"],
+      "mouse": [],
+      "subtick": {"W": 0.0, "A": 0.2}
+    },
+    "1002": {
+      "tick": 1002,
+      "keys": ["W", "A"],
+      "mouse": ["MOUSE1"],
+      "subtick": {"W": 0.0, "A": 0.0, "MOUSE1": 0.5}
+    },
+    "1003": {
+      "tick": 1003,
+      "keys": ["W"],
+      "mouse": ["MOUSE1"],
+      "subtick": {"W": 0.0, "MOUSE1": 0.0}
+    },
+    "1004": {
+      "tick": 1004,
+      "keys": ["W", "D"],
+      "mouse": [],
+      "subtick": {"W": 0.0, "D": 0.3}
+    }
+  }
+}

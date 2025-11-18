@@ -7,6 +7,9 @@ PyQt6-Qt6>=6.4.0
 # Demo Parsing
 demoparser2>=0.1.0
 
+# System Utilities
+psutil>=5.9.0
+
 # Optional: Fast serialization
 msgpack>=1.0.0
 

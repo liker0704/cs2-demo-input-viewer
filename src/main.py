@@ -1,8 +1,8 @@
 """CS2 Input Visualizer - Main Entry Point
 
 This is the main entry point for the CS2 Input Visualizer application.
-It provides a CLI interface for running the application in development or
-production mode.
+It provides a CLI interface for running the application in development,
+production, or automatic mode.
 
 Usage:
     Development mode (testing without CS2):
@@ -10,6 +10,9 @@ Usage:
 
     Production mode (with CS2 and demo file):
         python src/main.py --mode prod --demo path/to/demo.dem
+
+    Automatic mode (fully automatic with CS2):
+        python src/main.py --mode auto
 
     Generate example config:
         python src/main.py --generate-config
@@ -29,8 +32,9 @@ from PyQt6.QtWidgets import QApplication
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from core.config import AppConfig, load_config, save_config, validate_config, create_default_config
-from core.factory import create_dev_app, create_prod_app, validate_production_config
+from src.core.config import AppConfig, load_config, save_config, validate_config, create_default_config
+from src.core.factory import create_dev_app, create_prod_app, validate_production_config
+from src.core.auto_orchestrator import AutoOrchestrator
 
 
 class Application:
@@ -51,19 +55,22 @@ class Application:
 
         Args:
             config: Application configuration
-            mode: Run mode - "dev" (mocks) or "prod" (real CS2)
+            mode: Run mode - "dev" (mocks), "prod" (real CS2), or "auto" (fully automatic)
         """
         self.config = config
         self.mode = mode
 
-        # Create Qt application
-        self.qt_app = QApplication.instance()
-        if self.qt_app is None:
-            self.qt_app = QApplication(sys.argv)
+        # Create Qt application (not needed for auto mode)
+        if mode != "auto":
+            self.qt_app = QApplication.instance()
+            if self.qt_app is None:
+                self.qt_app = QApplication(sys.argv)
 
-        # Set application metadata
-        self.qt_app.setApplicationName("CS2 Input Visualizer")
-        self.qt_app.setOrganizationName("CS2 Input Visualizer")
+            # Set application metadata
+            self.qt_app.setApplicationName("CS2 Input Visualizer")
+            self.qt_app.setOrganizationName("CS2 Input Visualizer")
+        else:
+            self.qt_app = None
 
         # Create orchestrator based on mode
         print(f"\n[App] Creating application in {mode.upper()} mode...")
@@ -71,7 +78,10 @@ class Application:
         try:
             if mode == "dev":
                 self.orchestrator = create_dev_app(config)
-            else:
+            elif mode == "auto":
+                # Auto mode - no config validation needed upfront
+                self.orchestrator = AutoOrchestrator(config)
+            else:  # prod mode
                 # Validate production config
                 errors = validate_production_config(config)
                 if errors:
@@ -123,8 +133,9 @@ class Application:
             except Exception as e:
                 print(f"[App] Error during cleanup: {e}")
 
-            # Close Qt application
-            self.qt_app.quit()
+            # Close Qt application (if present)
+            if self.qt_app is not None:
+                self.qt_app.quit()
 
             # Close event loop
             loop.close()
@@ -146,6 +157,9 @@ Examples:
   # Production mode with demo file
   python src/main.py --mode prod --demo demos/match.dem
 
+  # Automatic mode (fully automatic, detects demos and players)
+  python src/main.py --mode auto
+
   # Custom configuration
   python src/main.py --mode prod --demo demos/match.dem --config my_config.json
 
@@ -162,9 +176,9 @@ For more information, see README_USAGE.md
     # Mode selection
     parser.add_argument(
         "--mode",
-        choices=["dev", "prod"],
+        choices=["dev", "prod", "auto"],
         default="dev",
-        help="Run mode: 'dev' (mock components, no CS2 needed) or 'prod' (real CS2 connection)"
+        help="Run mode: 'dev' (mocks), 'prod' (manual demo+player), or 'auto' (fully automatic)"
     )
 
     # Configuration
@@ -279,13 +293,31 @@ For more information, see README_USAGE.md
             print("\nThis will create the cache file needed for playback.")
             return 1
 
+    # Validation for auto mode
+    if args.mode == "auto":
+        print("\n[Auto Mode] No demo or player selection required")
+        print("[Auto Mode] The application will automatically:")
+        print("  1. Detect CS2 installation")
+        print("  2. Connect to CS2 telnet console")
+        print("  3. Wait for you to load a demo with 'playdemo <demo_name>'")
+        print("  4. Automatically parse the demo if needed")
+        print("  5. Track which player you're spectating")
+        print("  6. Display input visualization")
+        print("\nMake sure CS2 is running with: -netconport 2121 -insecure")
+
     # Display configuration summary
     print("\n" + "=" * 60)
     print("CS2 INPUT VISUALIZER")
     print("=" * 60)
     print(f"Mode:              {args.mode.upper()}")
-    print(f"Demo file:         {config.demo_path or 'None (using mocks)'}")
-    print(f"Player:            {config.target_player_id or 'Auto-detect'}")
+
+    if args.mode != "auto":
+        print(f"Demo file:         {config.demo_path or 'None (using mocks)'}")
+        print(f"Player:            {config.target_player_id or 'Auto-detect'}")
+    else:
+        print(f"Demo file:         Auto-detect on load")
+        print(f"Player:            Auto-track spectator target")
+
     print(f"CS2 connection:    {config.cs2_host}:{config.cs2_port}")
     print(f"Render FPS:        {config.render_fps}")
     print(f"Polling interval:  {config.polling_interval * 1000:.0f}ms")
@@ -299,6 +331,17 @@ For more information, see README_USAGE.md
         print("  1. Launch CS2 with: -netconport 2121 -insecure")
         print("  2. Load demo in CS2: playdemo <demo_name>")
         print("  3. The overlay will sync automatically")
+        print("\nWARNING: -insecure disables VAC. Only use for demo playback!")
+        print("=" * 60)
+
+    # Additional instructions for auto mode
+    if args.mode == "auto":
+        print("\nAUTO MODE WORKFLOW:")
+        print("  1. Launch CS2 with: -netconport 2121 -insecure")
+        print("  2. Start this application (it will wait for demo)")
+        print("  3. In CS2, use: playdemo <demo_name>")
+        print("  4. Spectate any player - overlay updates automatically")
+        print("  5. Switch players - overlay follows your view")
         print("\nWARNING: -insecure disables VAC. Only use for demo playback!")
         print("=" * 60)
 

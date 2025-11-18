@@ -11,6 +11,7 @@ Main components:
 - SafeSyncEngine: Sync engine with comprehensive error handling
 - CS2PlayerTracker: Tracks which player's inputs to visualize
 - ManualPlayerTracker: Simple manual player selection for testing
+- DemoMonitor: Automatically detects when demos start playing
 
 Example usage:
     >>> import asyncio
@@ -36,22 +37,30 @@ Example usage:
     >>> asyncio.run(main())
 """
 
-from network.telnet_client import (
+from .telnet_client import (
     CS2TelnetClient,
     RobustTelnetClient,
 )
 
-from network.sync_engine import (
+from .sync_engine import (
     SyncEngine,
     PredictionEngine,
     SafeSyncEngine,
 )
 
-from network.player_tracker import (
+from .player_tracker import (
     CS2PlayerTracker,
     AutoPlayerTracker,
     ManualPlayerTracker,
     DefaultPlayerTracker,
+)
+
+from .demo_monitor import (
+    DemoMonitor,
+)
+
+from .spectator_tracker import (
+    SpectatorTracker,
 )
 
 
@@ -68,4 +77,7 @@ __all__ = [
     "AutoPlayerTracker",
     "ManualPlayerTracker",
     "DefaultPlayerTracker",
+    # Demo monitoring
+    "DemoMonitor",
+    "SpectatorTracker",
 ]

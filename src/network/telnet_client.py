@@ -11,7 +11,7 @@ import asyncio
 import re
 from typing import Optional
 
-from interfaces.tick_source import ITickSource
+from ..interfaces.tick_source import ITickSource
 
 
 class CS2TelnetClient(ITickSource):
@@ -50,6 +50,10 @@ class CS2TelnetClient(ITickSource):
         self.writer: Optional[asyncio.StreamWriter] = None
         self._connected = False
         self._current_tick = 0
+
+        # Output buffering for monitoring console output
+        self.output_buffer: list[str] = []
+        self.buffer_size = 100  # Keep last 100 lines
 
         # Regex pattern to parse demo_info response
         # Matches: "Currently playing 12500 of 160000 ticks"
@@ -129,9 +133,9 @@ class CS2TelnetClient(ITickSource):
             self.writer.write(b"demo_info\n")
             await self.writer.drain()
 
-            # Read response with 1 second timeout
+            # Read response with 1 second timeout and buffer it
             response = await asyncio.wait_for(
-                self.reader.read(2048),
+                self._read_with_buffer(2048),
                 timeout=1.0
             )
 
@@ -154,6 +158,46 @@ class CS2TelnetClient(ITickSource):
             print(f"[Telnet] Query error: {e}")
             self._connected = False  # Mark as disconnected on error
             return self._current_tick
+
+    async def _read_with_buffer(self, size: int) -> bytes:
+        """Read from stream and accumulate in buffer.
+
+        Args:
+            size: Number of bytes to read
+
+        Returns:
+            bytes: Data read from stream
+        """
+        data = await self.reader.read(size)
+
+        # Decode and add to buffer
+        try:
+            text = data.decode('utf-8', errors='ignore')
+            lines = text.splitlines()
+
+            for line in lines:
+                if line.strip():  # Only add non-empty lines
+                    self.output_buffer.append(line)
+
+            # Maintain buffer size limit
+            if len(self.output_buffer) > self.buffer_size:
+                self.output_buffer = self.output_buffer[-self.buffer_size:]
+        except Exception:
+            pass  # Ignore buffer errors
+
+        return data
+
+    def get_buffer_content(self) -> str:
+        """Get accumulated output from buffer.
+
+        Returns:
+            str: Concatenated buffer content with newlines
+        """
+        return '\n'.join(self.output_buffer)
+
+    def clear_buffer(self) -> None:
+        """Clear the output buffer."""
+        self.output_buffer.clear()
 
     async def get_demo_info(self) -> dict:
         """Get full demo playback information.

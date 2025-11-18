@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QMainWindow
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPainter
 
-from domain.models import InputData
+from src.domain.models import InputData
 from .layouts import KeyboardLayout, MouseLayout, KeyPosition
 from .keyboard_renderer import KeyboardRenderer
 from .mouse_renderer import MouseRenderer

@@ -103,7 +103,7 @@ Press **Ctrl+C** to stop.
 
 ## Quick Start
 
-### Testing Without CS2 (Development Mode)
+### Mode 1: Development Mode (Testing Without CS2)
 
 Run the visualizer without needing CS2:
 
@@ -116,7 +116,9 @@ This shows the overlay with simulated inputs. Great for:
 - Adjusting position and opacity
 - Verifying installation
 
-### Using With CS2 (Production Mode)
+### Mode 2: Production Mode (Manual Control)
+
+Full manual control over demo selection and player tracking.
 
 1. **Get a demo file** (`.dem` file):
    - Download from FACEIT/HLTV
@@ -133,7 +135,7 @@ This shows the overlay with simulated inputs. Great for:
 3. **Launch CS2 with special parameters**:
    ```bash
    # Windows (Steam):
-   # Right-click CS2 � Properties � Launch Options:
+   # Right-click CS2 � Properties � Launch Options:
    -netconport 2121 -insecure
    ```
 
@@ -149,6 +151,83 @@ This shows the overlay with simulated inputs. Great for:
    ```
 
 The overlay will appear and sync automatically with CS2!
+
+### Mode 3: Auto Mode (Fully Automatic) ⭐ NEW
+
+**The easiest way to use the visualizer!** Auto mode handles everything automatically:
+
+- Detects CS2 installation path automatically
+- Monitors when you load demos in CS2
+- Validates and rebuilds cache automatically
+- Tracks which player you're spectating
+- Updates visualization in real-time
+
+**How to use:**
+
+1. **Launch CS2 with network console enabled:**
+   ```bash
+   # Add to Steam launch options:
+   -netconport 2121 -insecure
+   ```
+
+2. **Start the visualizer in auto mode:**
+   ```bash
+   python src/main.py --mode auto
+   ```
+
+3. **Play any demo in CS2:**
+   ```
+   # In CS2 console (~):
+   playdemo your_demo
+   ```
+
+4. **Done!** The visualizer will:
+   - Detect that you loaded a demo
+   - Check if cache exists (create if needed)
+   - Track which player you're spectating
+   - Display their inputs automatically
+
+**Auto Mode Workflow:**
+
+```
+[You] Launch CS2 with -netconport 2121
+  ↓
+[You] Run: python src/main.py --mode auto
+  ↓
+[Auto] Detecting CS2 installation... ✓
+  ↓
+[Auto] Connecting to CS2 telnet... ✓
+  ↓
+[Auto] Waiting for demo to be loaded...
+  ↓
+[You] In CS2 console: playdemo match
+  ↓
+[Auto] Demo detected: match.dem
+  ↓
+[Auto] Validating cache... (50ms)
+  ↓
+[Auto] Cache valid ✓ (or building new cache...)
+  ↓
+[Auto] Tracking spectator target...
+  ↓
+[Auto] Displaying inputs for: PlayerName
+  ↓
+[You] Switch spectator in CS2 (press Space)
+  ↓
+[Auto] Spectator changed, updating visualization...
+```
+
+**When to use Auto Mode:**
+- ✅ Quick analysis sessions
+- ✅ Reviewing multiple demos
+- ✅ Switching between players frequently
+- ✅ First-time users (zero configuration)
+
+**When to use Manual Mode (prod):**
+- ✅ Specific player analysis
+- ✅ Recording/streaming (predictable setup)
+- ✅ Custom cache locations
+- ✅ Advanced configuration needs
 
 ---
 
@@ -171,7 +250,7 @@ CS2 **must** be launched with these parameters for the visualizer to work:
 4. Click OK and launch CS2 normally
 
 **Steam Deck:**
-1. Select CS2 � Gear icon � Properties
+1. Select CS2 � Gear icon � Properties
 2. In "Launch Options", add: `-netconport 2121 -insecure`
 3. Launch game
 
@@ -191,7 +270,7 @@ CS2 **must** be launched with these parameters for the visualizer to work:
 **Always remove `-insecure` before playing online!**
 
 To remove:
-1. Go back to CS2 Properties � Launch Options
+1. Go back to CS2 Properties � Launch Options
 2. Delete `-netconport 2121 -insecure`
 3. Click OK
 
@@ -227,7 +306,12 @@ demo_goto 100000   # Jump to tick
 python src/main.py --mode dev
 ```
 
-**Production mode** (with CS2):
+**Auto mode** (fully automatic with CS2):
+```bash
+python src/main.py --mode auto
+```
+
+**Production mode** (manual control with CS2):
 ```bash
 python src/main.py --mode prod --demo demos/match.dem
 ```
@@ -240,9 +324,10 @@ python src/main.py [OPTIONS]
 
 **Options:**
 
-- `--mode {dev,prod}`: Run mode (default: dev)
+- `--mode {dev,prod,auto}`: Run mode (default: dev)
   - `dev`: Uses mock data, no CS2 needed
-  - `prod`: Connects to CS2, requires demo file
+  - `prod`: Connects to CS2, requires demo file (manual control)
+  - `auto`: Fully automatic mode (detects demos and players automatically)
 
 - `--demo PATH`: Path to demo file (.dem)
   - Required for production mode
@@ -266,7 +351,12 @@ python src/main.py [OPTIONS]
 python src/main.py --mode dev
 ```
 
-**Visualize specific demo:**
+**Quick start with auto mode:**
+```bash
+python src/main.py --mode auto
+```
+
+**Visualize specific demo (manual mode):**
 ```bash
 python src/main.py --mode prod --demo demos/faceit_match.dem
 ```
@@ -520,6 +610,88 @@ Adjust position to your second monitor:
      "polling_interval": 0.5
    }
    ```
+
+---
+
+### Auto Mode Issues
+
+**Problem: "Failed to detect CS2 installation"**
+
+**Cause**: CS2 not installed or installed in non-standard location
+
+**Solution**:
+1. Verify CS2 is installed via Steam
+2. If installed in custom location, use manual mode instead:
+   ```bash
+   python src/main.py --mode prod --demo path/to/demo.dem
+   ```
+3. Check if CS2 process is running:
+   ```bash
+   # Windows:
+   tasklist | findstr cs2
+   # Linux:
+   ps aux | grep cs2
+   ```
+
+---
+
+**Problem: "Failed to connect to CS2 telnet"**
+
+**Cause**: CS2 not launched with `-netconport 2121`
+
+**Solution**:
+1. Close CS2
+2. Add `-netconport 2121 -insecure` to Steam launch options
+3. Restart CS2
+4. Start auto mode again:
+   ```bash
+   python src/main.py --mode auto
+   ```
+
+---
+
+**Problem: "Demo detected but cache building is slow"**
+
+**Cause**: Large demo file being processed for first time
+
+**Solution**:
+This is normal! Cache is built once, then validated quickly (~50ms) on subsequent runs:
+- First run: May take 30-60 seconds for full match demo
+- Subsequent runs: <100ms cache validation
+- Cached data is reused across sessions
+
+---
+
+**Problem: "Spectator tracking not working"**
+
+**Cause**: Not in spectator mode or rapid switching
+
+**Solution**:
+1. Ensure you're in spectator mode (not freecam)
+2. Wait 1 second after switching players (tracking interval)
+3. Check console output for spectator changes
+4. If still not working, restart in manual mode with specific player:
+   ```bash
+   python src/main.py --mode prod --demo demo.dem --player STEAM_1:0:123456789
+   ```
+
+---
+
+**Problem: "Auto mode shows wrong player inputs"**
+
+**Cause**: Cache from different version of demo file
+
+**Solution**:
+Delete cache and let it rebuild:
+```bash
+# Windows:
+del cache\demo_name.json cache\demo_name.md5
+# Linux/macOS:
+rm cache/demo_name.json cache/demo_name.md5
+
+# Then restart auto mode:
+python src/main.py --mode auto
+```
 
 ---
 
@@ -834,4 +1006,4 @@ MIT License - Free to use and modify. See `LICENSE` file.
 
 ---
 
-**Enjoy analyzing those pro demos!** <�
+**Enjoy analyzing those pro demos!** <�

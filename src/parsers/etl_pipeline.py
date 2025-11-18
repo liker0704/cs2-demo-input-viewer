@@ -16,12 +16,13 @@ Usage:
 import json
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from collections import Counter
 
 from .button_decoder import decode_buttons, ButtonPress
 from .cache_manager import CacheManager
 from ..domain.models import DemoMetadata
+from ..utils.progress import ProgressReporter, ProgressBar
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -81,7 +82,8 @@ class DemoETLPipeline:
         self,
         player_id: Optional[str] = None,
         optimize: bool = True,
-        format: str = "json"
+        format: str = "json",
+        progress_callback: Optional[Callable] = None
     ) -> str:
         """Run complete ETL pipeline.
 
@@ -89,6 +91,8 @@ class DemoETLPipeline:
             player_id: Target player SteamID (None for auto-detect)
             optimize: Whether to optimize cache by removing duplicate entries
             format: Output format ("json", "msgpack", or "sqlite")
+            progress_callback: Optional callback for progress updates.
+                             Called with dict: {"phase": str, "progress": float, "message": str}
 
         Returns:
             Path to generated cache file
@@ -97,18 +101,27 @@ class DemoETLPipeline:
             RuntimeError: If demoparser2 is not installed
             ValueError: If demo parsing fails
         """
+        # Initialize progress reporter
+        reporter = ProgressReporter(progress_callback) if progress_callback else None
+
         logger.info("=" * 60)
         logger.info(f"Starting ETL pipeline for: {self.demo_path.name}")
         logger.info("=" * 60)
 
         # EXTRACT
         logger.info("Phase 1/3: Extracting data from demo file...")
-        raw_data = self._extract()
+        if reporter:
+            reporter.report("extract", 0.0, "Starting extraction...")
+        raw_data = self._extract(reporter)
         logger.info(f"✓ Extracted {len(raw_data)} input events")
+        if reporter:
+            reporter.report("extract", 1.0, f"Extracted {len(raw_data)} events")
 
         # TRANSFORM
         logger.info("Phase 2/3: Transforming data...")
-        cache_data = self._transform(raw_data, player_id)
+        if reporter:
+            reporter.report("transform", 0.0, "Starting transformation...")
+        cache_data = self._transform(raw_data, player_id, reporter)
         logger.info(
             f"✓ Transformed data for player {cache_data['meta']['player_id']}"
         )
@@ -117,6 +130,8 @@ class DemoETLPipeline:
             f"{cache_data['meta']['tick_range'][1]}"
         )
         logger.info(f"  Total ticks with input: {len(cache_data['inputs'])}")
+        if reporter:
+            reporter.report("transform", 1.0, f"Processed {len(cache_data['inputs'])} ticks")
 
         # Optimize if requested
         if optimize:
@@ -125,8 +140,12 @@ class DemoETLPipeline:
 
         # LOAD
         logger.info("Phase 3/3: Loading to cache...")
-        cache_path = self._load(cache_data, format)
+        if reporter:
+            reporter.report("load", 0.0, "Saving cache...")
+        cache_path = self._load(cache_data, format, reporter)
         logger.info(f"✓ Cache saved to: {cache_path}")
+        if reporter:
+            reporter.report("load", 1.0, "Cache saved successfully")
 
         logger.info("=" * 60)
         logger.info("ETL pipeline completed successfully!")
@@ -134,8 +153,11 @@ class DemoETLPipeline:
 
         return cache_path
 
-    def _extract(self) -> list:
+    def _extract(self, reporter: Optional[ProgressReporter] = None) -> list:
         """Extract phase: Parse demo file using demoparser2.
+
+        Args:
+            reporter: Optional progress reporter for status updates
 
         Returns:
             List of input events with raw data
@@ -152,6 +174,9 @@ class DemoETLPipeline:
 
         try:
             logger.info(f"Parsing demo file: {self.demo_path}")
+            if reporter:
+                reporter.report("extract", 0.1, f"Parsing {self.demo_path.name}...")
+
             parser = DemoParser(str(self.demo_path))
 
             # Define required fields for extraction
@@ -165,11 +190,17 @@ class DemoETLPipeline:
 
             # Parse player input events
             logger.info("Parsing player input events...")
+            if reporter:
+                reporter.report("extract", 0.5, "Extracting player input events...")
+
             df = parser.parse_event(
                 "player_input",
                 player=["m_steamID", "name"],
                 other=["m_nButtonDownMaskPrev", "subtick_moves", "tick"]
             )
+
+            if reporter:
+                reporter.report("extract", 0.8, "Converting parsed data...")
 
             # Convert DataFrame to list of dicts
             if hasattr(df, 'to_dict'):
@@ -192,13 +223,15 @@ class DemoETLPipeline:
     def _transform(
         self,
         raw_data: list,
-        player_id: Optional[str] = None
+        player_id: Optional[str] = None,
+        reporter: Optional[ProgressReporter] = None
     ) -> Dict[str, Any]:
         """Transform phase: Decode buttons and process subtick data.
 
         Args:
             raw_data: Raw input events from extraction phase
             player_id: Target player SteamID (None for auto-detect)
+            reporter: Optional progress reporter for status updates
 
         Returns:
             Transformed cache data dictionary
@@ -208,10 +241,14 @@ class DemoETLPipeline:
         """
         # Auto-detect player if not specified
         if player_id is None:
+            if reporter:
+                reporter.report("transform", 0.05, "Auto-detecting player...")
             player_id = self._detect_player(raw_data)
             logger.info(f"Auto-detected player: {player_id}")
 
         # Filter events for target player
+        if reporter:
+            reporter.report("transform", 0.1, f"Filtering events for {player_id}...")
         player_events = [
             event for event in raw_data
             if event.get('m_steamID') == player_id
@@ -252,8 +289,19 @@ class DemoETLPipeline:
         # Transform each event
         logger.info("Decoding button masks and processing subtick data...")
         processed_count = 0
+        total_events = len(player_events)
 
-        for event in player_events:
+        for i, event in enumerate(player_events):
+            # Report progress periodically (every 10% or every 1000 events)
+            if reporter and (i % max(1, total_events // 10) == 0 or i % 1000 == 0):
+                progress = 0.2 + (0.7 * i / total_events)  # 20% to 90%
+                tick = event.get('tick', 0)
+                reporter.report(
+                    "transform",
+                    progress,
+                    f"Processing tick {tick} ({i}/{total_events})"
+                )
+
             tick = int(event.get('tick', 0))
             mask = int(event.get('m_nButtonDownMaskPrev', 0))
             subtick_moves = event.get('subtick_moves', None)
@@ -293,12 +341,18 @@ class DemoETLPipeline:
 
         return cache
 
-    def _load(self, cache_data: Dict[str, Any], format: str = "json") -> str:
+    def _load(
+        self,
+        cache_data: Dict[str, Any],
+        format: str = "json",
+        reporter: Optional[ProgressReporter] = None
+    ) -> str:
         """Load phase: Save cache to disk.
 
         Args:
             cache_data: Transformed cache data
             format: Output format ("json", "msgpack", or "sqlite")
+            reporter: Optional progress reporter for status updates
 
         Returns:
             Path to saved cache file
@@ -316,12 +370,18 @@ class DemoETLPipeline:
         ext = extensions.get(format, ".json")
         cache_path = self.output_dir / f"{demo_name}_{player_id}_cache{ext}"
 
+        if reporter:
+            reporter.report("load", 0.3, f"Writing {format} cache to {cache_path.name}...")
+
         # Save using cache manager
         self.cache_manager.save_cache(
             cache_data,
             str(cache_path),
             format=format
         )
+
+        if reporter:
+            reporter.report("load", 0.9, f"Cache written successfully")
 
         return str(cache_path)
 
@@ -414,14 +474,17 @@ Examples:
   # Process demo with auto-detected player
   python -m src.parsers.etl_pipeline --demo match.dem
 
-  # Process specific player
-  python -m src.parsers.etl_pipeline --demo match.dem --player STEAM_1:0:123456
+  # Process specific player with progress bar
+  python -m src.parsers.etl_pipeline --demo match.dem --player STEAM_1:0:123456 --progress
 
   # Custom output directory and format
   python -m src.parsers.etl_pipeline --demo match.dem --output ./my_cache --format msgpack
 
   # Disable optimization (keep all ticks)
   python -m src.parsers.etl_pipeline --demo match.dem --no-optimize
+
+  # Process with progress bar and verbose output
+  python -m src.parsers.etl_pipeline --demo match.dem --progress --verbose
         """
     )
 
@@ -467,11 +530,35 @@ Examples:
         help='Enable verbose logging'
     )
 
+    parser.add_argument(
+        '--progress',
+        action='store_true',
+        help='Show progress bar during ETL processing'
+    )
+
     args = parser.parse_args()
 
     # Configure logging level
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # Setup progress callback if requested
+    progress_callback = None
+    progress_bar = None
+    if args.progress:
+        progress_bar = ProgressBar(width=40)
+
+        def progress_callback(info):
+            """Progress callback that renders progress bar."""
+            phase = info.get('phase', '')
+            overall_progress = info.get('overall_progress', 0.0)
+            message = info.get('message', '')
+
+            # Format phase name for display
+            phase_display = phase.capitalize()
+            full_message = f"[{phase_display}] {message}"
+
+            progress_bar.render(overall_progress, full_message)
 
     try:
         # Initialize and run pipeline
@@ -483,9 +570,13 @@ Examples:
         cache_path = pipeline.run(
             player_id=args.player,
             optimize=not args.no_optimize,
-            format=args.format
+            format=args.format,
+            progress_callback=progress_callback
         )
 
+        # Clear progress bar and print success
+        if progress_bar:
+            progress_bar.finish("Complete!")
         print(f"\n✓ Success! Cache saved to: {cache_path}")
 
         # Display metadata

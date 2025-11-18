@@ -6,7 +6,7 @@ and display player input data on screen.
 
 from abc import ABC, abstractmethod
 
-from domain.models import InputData
+from ..domain.models import InputData
 
 
 class IInputVisualizer(ABC):

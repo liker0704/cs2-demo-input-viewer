@@ -13,7 +13,7 @@ import asyncio
 import time
 from typing import Optional
 
-from interfaces.tick_source import ITickSource
+from ..interfaces.tick_source import ITickSource
 
 
 class SyncEngine:

@@ -7,7 +7,7 @@ and provide access to CS2 demo file data, particularly player inputs.
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from domain.models import InputData
+from src.domain.models import InputData
 
 
 class IDemoRepository(ABC):

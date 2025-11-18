@@ -10,7 +10,7 @@ add automatic tracking via game state integration or demo event parsing.
 
 from typing import Optional
 
-from interfaces.player_tracker import IPlayerTracker
+from ..interfaces.player_tracker import IPlayerTracker
 
 
 class CS2PlayerTracker(IPlayerTracker):

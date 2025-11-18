@@ -18,6 +18,7 @@ from .button_decoder import (
     is_button_pressed,
 )
 from .cache_manager import CacheManager
+from .cache_validator import CacheValidator
 from .etl_pipeline import DemoETLPipeline
 
 __all__ = [
@@ -35,6 +36,8 @@ __all__ = [
     "is_button_pressed",
     # Cache Manager
     "CacheManager",
+    # Cache Validator
+    "CacheValidator",
     # ETL Pipeline
     "DemoETLPipeline",
 ]

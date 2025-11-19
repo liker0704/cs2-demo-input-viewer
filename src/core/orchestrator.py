@@ -112,7 +112,7 @@ class Orchestrator:
         demo_repository: IDemoRepository,
         player_tracker: IPlayerTracker,
         visualizer: IInputVisualizer,
-        polling_interval: float = 0.25,
+        polling_interval: float = 0.5,
         render_fps: int = 60,
         tick_rate: int = 64,
         use_smooth_prediction: bool = True
@@ -124,7 +124,9 @@ class Orchestrator:
             demo_repository: Source of input data (Parser or Mock)
             player_tracker: Tracker for current player (CS2 or Mock)
             visualizer: UI overlay (PyQt6 or Mock)
-            polling_interval: Network polling frequency in seconds (default: 0.25)
+            polling_interval: Network polling frequency in seconds (default: 0.5)
+                             Research recommends 0.5s for optimal balance between
+                             accuracy and jitter reduction (was 0.25s)
             render_fps: Target rendering FPS (default: 60)
             tick_rate: Game tick rate in Hz (default: 64)
             use_smooth_prediction: Use smooth prediction engine (default: True)

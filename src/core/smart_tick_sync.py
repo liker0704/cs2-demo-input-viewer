@@ -111,6 +111,10 @@ class SmartTickSync:
         speed = (tick_diff / time_diff) / tick_rate
 
         We use linear regression over the last N measurements for stability.
+
+        Edge cases handled:
+        - Tick jumps (Shift+F2 goto): Discard measurements with sudden large jumps
+        - Outliers: Discard speed measurements far from recent average
         """
         if len(self._history) < 2:
             # Not enough data
@@ -135,6 +139,17 @@ class SmartTickSync:
             logger.debug(f"[SmartTickSync] Time diff too small ({time_diff:.3f}s), keeping speed={self._current_speed:.2f}x")
             return
 
+        # Edge Case 1: Detect tick jumps (Shift+F2 goto)
+        # If tick_diff is way larger than expected, likely a jump
+        if len(self._history) >= 3:
+            expected_diff = self.tick_rate * time_diff * self._current_speed
+            if abs(tick_diff) > abs(expected_diff) * 5:
+                logger.warning(f"[SmartTickSync] Tick jump detected: {tick_diff} ticks "
+                              f"(expected ~{expected_diff:.0f}), discarding measurement")
+                # Remove the newest measurement that caused the jump
+                self._history.pop()
+                return
+
         # Calculate tick rate (ticks per second)
         measured_tick_rate = tick_diff / time_diff
 
@@ -144,6 +159,13 @@ class SmartTickSync:
         # Clamp to reasonable range (0.05x - 5.0x)
         speed = max(0.05, min(5.0, speed))
 
+        # Edge Case 2: Outlier detection
+        # If speed differs too much from current average, it might be an outlier
+        if self._is_outlier(speed, threshold=0.5):
+            logger.warning(f"[SmartTickSync] Outlier detected: {speed:.2f}x "
+                          f"(current avg: {self._current_speed:.2f}x), discarding")
+            return
+
         # Smooth speed changes (exponential moving average)
         alpha = 0.3  # Smoothing factor
         self._current_speed = alpha * speed + (1 - alpha) * self._current_speed
@@ -152,6 +174,30 @@ class SmartTickSync:
                     f"tick_diff={tick_diff}, time_diff={time_diff:.3f}s, "
                     f"measured_rate={measured_tick_rate:.1f} tps, "
                     f"speed={speed:.2f}x, smoothed={self._current_speed:.2f}x")
+
+    def _is_outlier(self, speed: float, threshold: float = 0.5) -> bool:
+        """Check if speed measurement is an outlier.
+
+        An outlier is a measurement that differs significantly from the
+        current average, which might indicate measurement error or
+        temporary glitch.
+
+        Args:
+            speed: Speed measurement to check
+            threshold: Maximum allowed deviation (default: 0.5x)
+
+        Returns:
+            bool: True if outlier, False otherwise
+        """
+        # Need at least some history to compare
+        if len(self._history) < 3:
+            return False
+
+        # Calculate deviation from current speed
+        deviation = abs(speed - self._current_speed)
+
+        # If deviation exceeds threshold, it's an outlier
+        return deviation > threshold
 
     def _detect_pause(self):
         """Detect if demo is paused.

@@ -1,0 +1,17 @@
+{
+  "cs2_host": "127.0.0.1",
+  "cs2_port": 2121,
+  "polling_interval": 0.25,
+  "render_fps": 60,
+  "overlay_opacity": 0.9,
+  "cache_dir": "./cache",
+  "demo_path": null,
+  "target_player_id": null,
+  "max_drift": 10,
+  "smoothing_window": 5,
+  "overlay_scale": 1.0,
+  "overlay_x": 100,
+  "overlay_y": 100,
+  "debug_mode": false,
+  "show_fps": false
+}

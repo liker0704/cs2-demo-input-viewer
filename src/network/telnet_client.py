@@ -132,11 +132,13 @@ class CS2TelnetClient(ITickSource):
         return self._current_tick
 
     async def force_sync_tick(self) -> int:
-        """Force synchronization by actively pausing/resuming demo.
-        
+        """Force synchronization using get_demo_info().
+
         This should be used sparingly, only when we need to resync
         (e.g., after connection loss or large drift).
-        
+
+        Uses get_demo_info() which is PASSIVE (no pause/resume) and reliable.
+
         Returns:
             int: Current tick number from forced sync
         """
@@ -145,60 +147,29 @@ class CS2TelnetClient(ITickSource):
             return self._current_tick
 
         try:
-            print("[Telnet] Force syncing tick...")
-            
-            # Send demo_pause to trigger tick output
-            self.writer.write(b"demo_pause\n")
-            await self.writer.drain()
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("[Telnet] Force syncing tick via demo_info...")
 
-            # Read response
-            response = await asyncio.wait_for(
-                self._read_with_buffer(4096),
-                timeout=1.0
-            )
-            response_text = response.decode('utf-8', errors='ignore')
+            # Use get_demo_info() - passive, reliable, no freeze
+            demo_info = await self.get_demo_info()
+            current_tick = demo_info["current_tick"]
 
-            # Send demo_resume immediately to continue playback
-            self.writer.write(b"demo_resume\n")
-            await self.writer.drain()
-            
-            # Read resume response
-            try:
-                resume_response = await asyncio.wait_for(
-                    self._read_with_buffer(4096),
-                    timeout=0.5
-                )
-                response_text += resume_response.decode('utf-8', errors='ignore')
-            except asyncio.TimeoutError:
-                pass
-
-            # Parse tick
-            # Try multiple patterns as CS2 format might vary
-            patterns = [
-                re.compile(r"(?:paused|unpaused) on tick (\d+)"),  # CGameRules format
-                re.compile(r"tick\s+(\d+)"),  # Generic tick mention
-                re.compile(r"Demo tick:\s*(\d+)"),  # Demo info format
-            ]
-            
-            print(f"[Telnet] Response text: {repr(response_text[:200])}")  # Debug
-            
-            current_tick = None
-            for pattern in patterns:
-                match = pattern.search(response_text)
-                if match:
-                    current_tick = int(match.group(1))
-                    break
-
-            if current_tick:
+            # Validate tick > 0 before updating
+            if current_tick > 0:
                 self._current_tick = current_tick
+                logger.info(f"[Telnet] Force sync successful: tick {current_tick} (speed: {demo_info['speed']}x)")
                 print(f"[Telnet] Force sync successful: tick {current_tick}")
                 return current_tick
             else:
-                print(f"[Telnet] Force sync failed to parse tick from response")
-                print(f"[Telnet] Full response: {repr(response_text)}")
+                logger.warning(f"[Telnet] Force sync got invalid tick: {current_tick} (keeping previous: {self._current_tick})")
+                print(f"[Telnet] Force sync got tick 0 (demo not playing?), keeping previous tick: {self._current_tick}")
                 return self._current_tick
 
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"[Telnet] Force sync error: {e}", exc_info=True)
             print(f"[Telnet] Force sync error: {e}")
             import traceback
             traceback.print_exc()

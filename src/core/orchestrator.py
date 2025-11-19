@@ -181,7 +181,7 @@ class Orchestrator:
             # Initialize sync engine (pass sync_interval instead of polling_interval)
             self.sync_engine = SyncEngine(
                 self.tick_source,
-                sync_interval=5.0  # Force sync every 5 seconds
+                sync_interval=1.5  # Force sync every 1.5 seconds (reduced from 5.0 for less drift)
             )
             
             # Do initial sync to get starting tick

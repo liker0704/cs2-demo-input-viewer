@@ -140,6 +140,10 @@ class Application:
             # Close event loop
             loop.close()
 
+            # Flush and close all log handlers
+            import logging
+            logging.shutdown()
+
         print("[App] Exited cleanly")
 
 
@@ -230,29 +234,61 @@ For more information, see README_USAGE.md
     if args.log or args.debug:
         import logging
         from datetime import datetime
-        
+
+        # Determine log level based on --debug flag
+        log_level = logging.DEBUG if args.debug else logging.INFO
+
+        # Determine log file path
         log_file = args.log if args.log else f"debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-        
+
+        # Build handlers list
+        handlers = []
+
+        # Always add console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(logging.Formatter(
+            '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        ))
+        handlers.append(console_handler)
+
+        # Add file handler if --log specified or --debug enabled
+        if args.log or args.debug:
+            file_handler = logging.FileHandler(
+                log_file,
+                mode='w',
+                encoding='utf-8',
+                delay=False  # Open file immediately, not on first write
+            )
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            ))
+            handlers.append(file_handler)
+
+        # Configure logging with force=True to override any previous basicConfig calls
         logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s [%(levelname)s] %(message)s',
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler(sys.stdout)
-            ]
+            level=log_level,
+            format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+            handlers=handlers,
+            force=True  # CRITICAL: Override any previous basicConfig calls from imported modules
         )
-        
+
+        # Ensure root logger uses correct level
+        logging.getLogger().setLevel(log_level)
+
         # Monkey patch print to also log
         original_print = print
         def logged_print(*args, **kwargs):
             message = ' '.join(str(arg) for arg in args)
             logging.info(message)
             original_print(*args, **kwargs)
-        
+
         import builtins
         builtins.print = logged_print
-        
-        print(f"[Logging] Writing to file: {log_file}")
+
+        log_dest = f"file: {log_file}" if (args.log or args.debug) else "console only"
+        print(f"[Logging] Enabled (level: {logging.getLevelName(log_level)}, destination: {log_dest})")
 
     # Handle config generation
     if args.generate_config:

@@ -25,36 +25,52 @@ from src.core.prediction_engine import PredictionEngine, SmoothPredictionEngine
 class SyncEngine:
     """Synchronization engine for network polling.
 
-    Polls the tick source at regular intervals to get the current server tick.
-    Stores the last known tick and timestamp for use by the prediction engine.
+    Uses periodic force_sync to resynchronize with CS2 demo playback.
+    Between syncs, the prediction engine interpolates tick values.
     """
 
-    def __init__(self, tick_source: ITickSource, polling_interval: float = 0.25):
+    def __init__(self, tick_source: ITickSource, sync_interval: float = 5.0):
         """Initialize sync engine.
 
         Args:
             tick_source: Source of tick data (Telnet or Mock)
-            polling_interval: Polling frequency in seconds (default: 0.25 = 4 Hz)
+            sync_interval: Time between force syncs in seconds (default: 5.0)
         """
         self.tick_source = tick_source
-        self.polling_interval = polling_interval
+        self.sync_interval = sync_interval
 
         # State
         self._last_tick = 0
         self._last_update_time = 0.0
+        self._last_sync_time = 0.0
 
-    async def update(self):
+    async def update(self, force: bool = False):
         """Update tick from source.
 
-        Fetches current tick from tick source and updates internal state.
+        Args:
+            force: If True, forces a sync via demo_pause/resume. 
+                   If False, just returns last known tick.
 
         Raises:
             Exception: If tick source update fails
         """
         try:
-            tick = await self.tick_source.get_current_tick()
+            current_time = time.time()
+            
+            # Check if we need to force sync
+            should_sync = force or (current_time - self._last_sync_time >= self.sync_interval)
+            
+            if should_sync and hasattr(self.tick_source, 'force_sync_tick'):
+                # Do force sync
+                tick = await self.tick_source.force_sync_tick()
+                self._last_sync_time = current_time
+                print(f"[SyncEngine] Synced to tick {tick}")
+            else:
+                # Just get passive tick (no polling)
+                tick = await self.tick_source.get_current_tick()
+            
             self._last_tick = tick
-            self._last_update_time = time.time()
+            self._last_update_time = current_time
 
         except Exception as e:
             print(f"[SyncEngine] Update error: {e}")
@@ -162,11 +178,15 @@ class Orchestrator:
             if not self._current_player:
                 print("[Orchestrator] Warning: No player selected")
 
-            # Initialize sync engine
+            # Initialize sync engine (pass sync_interval instead of polling_interval)
             self.sync_engine = SyncEngine(
                 self.tick_source,
-                self.polling_interval
+                sync_interval=5.0  # Force sync every 5 seconds
             )
+            
+            # Do initial sync to get starting tick
+            print("[Orchestrator] Performing initial synchronization...")
+            await self.sync_engine.update(force=True)
 
             # Initialize prediction engine (basic or smooth)
             if self.use_smooth_prediction:

@@ -107,8 +107,21 @@ class CS2InputOverlay(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
 
         # Set window size and position
-        # Position at (50, 50) with size to contain keyboard + mouse + margins
-        self.setGeometry(50, 50, 700, 300)
+        # Position in bottom-left corner with margins
+        from PyQt6.QtGui import QGuiApplication
+        
+        # Get screen geometry
+        screen = QGuiApplication.primaryScreen().geometry()
+        
+        # Overlay size (increased to prevent clipping)
+        overlay_width = 800
+        overlay_height = 350
+        
+        # Position in bottom-left with 20px margins
+        x = 20
+        y = screen.height() - overlay_height - 20
+        
+        self.setGeometry(x, y, overlay_width, overlay_height)
 
         # Set window title (not visible but useful for debugging/window management)
         self.setWindowTitle("CS2 Input Overlay")
@@ -134,6 +147,38 @@ class CS2InputOverlay(QMainWindow):
 
         # Trigger repaint to show updated input states
         self.update()
+
+    def render(self, input_data: Optional[InputData]) -> None:
+        """Render the provided input data to the display.
+        
+        This is an alias for update_inputs() to match the IInputVisualizer interface.
+        
+        Args:
+            input_data: The input data to visualize (keys, mouse, etc.)
+        """
+        if input_data:
+            self.update_inputs(input_data)
+        else:
+            # Clear visualization
+            self.keyboard_renderer.set_active_keys([])
+            self.mouse_renderer.set_active_buttons([])
+            self.update()
+
+    def show(self) -> None:
+        """Make the visualizer visible on screen."""
+        super().show()
+        print(f"[Overlay] Shown at ({self.x()}, {self.y()}) size {self.width()}x{self.height()}")
+        print(f"[Overlay] Visible: {self.isVisible()}")
+
+    def hide(self) -> None:
+        """Hide the visualizer from screen."""
+        super().hide()
+        print("[Overlay] Hidden")
+
+    def set_position(self, x: int, y: int) -> None:
+        """Set the screen position of the visualizer."""
+        self.move(x, y)
+        print(f"[Overlay] Moved to ({x}, {y})")
 
     def paintEvent(self, event) -> None:
         """Render the overlay visualization.

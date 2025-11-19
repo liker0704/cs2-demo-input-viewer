@@ -76,10 +76,15 @@ class CS2TelnetClient(ITickSource):
             )
 
             # Read welcome message (CS2 sends initial prompt)
-            welcome = await asyncio.wait_for(
-                self.reader.read(1024),
-                timeout=2.0
-            )
+            # Note: CS2 might not send a welcome message immediately, so we handle timeout
+            try:
+                welcome = await asyncio.wait_for(
+                    self.reader.read(1024),
+                    timeout=2.0
+                )
+                print(f"[Telnet] Received welcome: {repr(welcome.decode('utf-8', errors='ignore'))}")
+            except asyncio.TimeoutError:
+                print("[Telnet] No welcome message received (timeout), but connected.")
 
             self._connected = True
             print(f"[Telnet] Connected to CS2 at {self.host}:{self.port}")
@@ -115,48 +120,88 @@ class CS2TelnetClient(ITickSource):
         return self._connected
 
     async def get_current_tick(self) -> int:
-        """Query CS2 for current demo playback tick.
+        """Get current demo playback tick (passive).
 
-        Sends 'demo_info' command to CS2 and parses the response to extract
-        the current tick number. If the query fails, returns the last known
-        tick value.
+        This method NEVER actively polls CS2. It only returns the last known tick
+        that was synced via force_sync_tick(). The prediction engine will interpolate
+        between sync points.
 
         Returns:
-            int: Current tick number, or last known tick if query fails
+            int: Last known tick from most recent sync
+        """
+        return self._current_tick
+
+    async def force_sync_tick(self) -> int:
+        """Force synchronization by actively pausing/resuming demo.
+        
+        This should be used sparingly, only when we need to resync
+        (e.g., after connection loss or large drift).
+        
+        Returns:
+            int: Current tick number from forced sync
         """
         if not self._connected:
-            print("[Telnet] Not connected, cannot get tick")
+            print("[Telnet] Not connected, cannot force sync")
             return self._current_tick
 
         try:
-            # Send demo_info command
-            self.writer.write(b"demo_info\n")
+            print("[Telnet] Force syncing tick...")
+            
+            # Send demo_pause to trigger tick output
+            self.writer.write(b"demo_pause\n")
             await self.writer.drain()
 
-            # Read response with 1 second timeout and buffer it
+            # Read response
             response = await asyncio.wait_for(
-                self._read_with_buffer(2048),
+                self._read_with_buffer(4096),
                 timeout=1.0
             )
-
-            # Parse response
             response_text = response.decode('utf-8', errors='ignore')
-            match = self._tick_pattern.search(response_text)
 
-            if match:
-                current_tick = int(match.group(1))
+            # Send demo_resume immediately to continue playback
+            self.writer.write(b"demo_resume\n")
+            await self.writer.drain()
+            
+            # Read resume response
+            try:
+                resume_response = await asyncio.wait_for(
+                    self._read_with_buffer(4096),
+                    timeout=0.5
+                )
+                response_text += resume_response.decode('utf-8', errors='ignore')
+            except asyncio.TimeoutError:
+                pass
+
+            # Parse tick
+            # Try multiple patterns as CS2 format might vary
+            patterns = [
+                re.compile(r"(?:paused|unpaused) on tick (\d+)"),  # CGameRules format
+                re.compile(r"tick\s+(\d+)"),  # Generic tick mention
+                re.compile(r"Demo tick:\s*(\d+)"),  # Demo info format
+            ]
+            
+            print(f"[Telnet] Response text: {repr(response_text[:200])}")  # Debug
+            
+            current_tick = None
+            for pattern in patterns:
+                match = pattern.search(response_text)
+                if match:
+                    current_tick = int(match.group(1))
+                    break
+
+            if current_tick:
                 self._current_tick = current_tick
+                print(f"[Telnet] Force sync successful: tick {current_tick}")
                 return current_tick
             else:
-                print(f"[Telnet] Failed to parse tick from response: {response_text[:100]}")
+                print(f"[Telnet] Force sync failed to parse tick from response")
+                print(f"[Telnet] Full response: {repr(response_text)}")
                 return self._current_tick
 
-        except asyncio.TimeoutError:
-            print("[Telnet] Query timeout - using last known tick")
-            return self._current_tick
         except Exception as e:
-            print(f"[Telnet] Query error: {e}")
-            self._connected = False  # Mark as disconnected on error
+            print(f"[Telnet] Force sync error: {e}")
+            import traceback
+            traceback.print_exc()
             return self._current_tick
 
     async def _read_with_buffer(self, size: int) -> bytes:

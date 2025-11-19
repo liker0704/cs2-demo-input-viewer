@@ -217,7 +217,42 @@ For more information, see README_USAGE.md
         help="Enable debug mode with verbose logging"
     )
 
+    # File logging
+    parser.add_argument(
+        "--log",
+        type=str,
+        help="Log to file (provide filename, default: debug_TIMESTAMP.log if flag present without value)"
+    )
+
     args = parser.parse_args()
+
+    # Setup file logging if requested
+    if args.log or args.debug:
+        import logging
+        from datetime import datetime
+        
+        log_file = args.log if args.log else f"debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s [%(levelname)s] %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler(sys.stdout)
+            ]
+        )
+        
+        # Monkey patch print to also log
+        original_print = print
+        def logged_print(*args, **kwargs):
+            message = ' '.join(str(arg) for arg in args)
+            logging.info(message)
+            original_print(*args, **kwargs)
+        
+        import builtins
+        builtins.print = logged_print
+        
+        print(f"[Logging] Writing to file: {log_file}")
 
     # Handle config generation
     if args.generate_config:

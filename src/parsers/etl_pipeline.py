@@ -181,7 +181,7 @@ class DemoETLPipeline:
 
             # Define required fields for extraction
             fields = [
-                "m_nButtonDownMaskPrev",  # Button bitmask
+                "CCSPlayerPawn.CCSPlayer_MovementServices.m_nButtonDownMaskPrev",  # Button bitmask
                 "subtick_moves",          # Subtick timing data
                 "m_steamID",              # Player identification
                 "tick",                   # Tick number
@@ -193,11 +193,8 @@ class DemoETLPipeline:
             if reporter:
                 reporter.report("extract", 0.5, "Extracting player input events...")
 
-            df = parser.parse_event(
-                "player_input",
-                player=["m_steamID", "name"],
-                other=["m_nButtonDownMaskPrev", "subtick_moves", "tick"]
-            )
+            # Use parse_ticks instead of parse_event for better reliability with props
+            df = parser.parse_ticks(fields)
 
             if reporter:
                 reporter.report("extract", 0.8, "Converting parsed data...")
@@ -249,9 +246,14 @@ class DemoETLPipeline:
         # Filter events for target player
         if reporter:
             reporter.report("transform", 0.1, f"Filtering events for {player_id}...")
+        
+        # Helper to get steam ID from event (handles both m_steamID and steamid)
+        def get_steam_id(evt):
+            return str(evt.get('m_steamID') or evt.get('steamid'))
+
         player_events = [
             event for event in raw_data
-            if event.get('m_steamID') == player_id
+            if get_steam_id(event) == str(player_id)
         ]
 
         if not player_events:
@@ -303,7 +305,7 @@ class DemoETLPipeline:
                 )
 
             tick = int(event.get('tick', 0))
-            mask = int(event.get('m_nButtonDownMaskPrev', 0))
+            mask = int(event.get('CCSPlayerPawn.CCSPlayer_MovementServices.m_nButtonDownMaskPrev', 0))
             subtick_moves = event.get('subtick_moves', None)
 
             # Handle None or invalid subtick_moves
@@ -402,9 +404,9 @@ class DemoETLPipeline:
         # Count occurrences of each player
         player_counts = Counter()
         for event in raw_data:
-            steam_id = event.get('m_steamID')
+            steam_id = event.get('m_steamID') or event.get('steamid')
             if steam_id:
-                player_counts[steam_id] += 1
+                player_counts[str(steam_id)] += 1
 
         if not player_counts:
             raise ValueError("No player IDs found in demo data")
@@ -431,9 +433,9 @@ class DemoETLPipeline:
         """
         players = set()
         for event in raw_data:
-            steam_id = event.get('m_steamID')
+            steam_id = event.get('m_steamID') or event.get('steamid')
             if steam_id:
-                players.add(steam_id)
+                players.add(str(steam_id))
         return sorted(list(players))
 
     def get_metadata(self, cache_path: str) -> DemoMetadata:

@@ -21,12 +21,15 @@ class InputData:
         mouse: List of mouse buttons pressed (e.g., ["MOUSE1"])
         subtick: Dictionary mapping input actions to their subtick timing (0.0-1.0)
         timestamp: Optional Unix timestamp when this input occurred
+        playback_speed: Optional playback speed multiplier (0.25x, 0.5x, 1.0x, 2.0x, etc.)
+                        Used for speed-aware visualization timing
     """
     tick: int
     keys: List[str]
     mouse: List[str]
     subtick: dict
     timestamp: Optional[float] = None
+    playback_speed: Optional[float] = 1.0  # Default to 1.0x (normal speed)
 
 
 @dataclass

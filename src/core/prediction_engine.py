@@ -61,6 +61,9 @@ class PredictionEngine:
         server_tick = self.sync_engine.get_last_tick()
 
         if server_tick == 0:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("[Prediction] Server tick is 0, demo not loaded yet")
             return 0
 
         # Time since last server update
@@ -77,6 +80,12 @@ class PredictionEngine:
         predicted = self._apply_drift_correction(predicted, server_tick)
 
         self._predicted_tick = predicted
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"[Prediction] server={server_tick}, elapsed={time_elapsed:.3f}s, "
+                    f"predicted={predicted}, drift={predicted-server_tick}")
+
         return predicted
 
     def _apply_drift_correction(
@@ -187,7 +196,8 @@ class SmoothPredictionEngine(PredictionEngine):
     def _is_paused(self) -> bool:
         """Detect if demo is paused.
 
-        A demo is considered paused if the last 3 ticks are identical.
+        A demo is considered paused if the last 3 ticks are identical AND > 0.
+        (Tick 0 means demo not loaded, not paused)
 
         Returns:
             bool: True if demo appears to be paused
@@ -197,7 +207,21 @@ class SmoothPredictionEngine(PredictionEngine):
 
         # If last 3 ticks are identical, likely paused
         recent = self._tick_history[-3:]
-        return len(set(recent)) == 1
+        all_same = len(set(recent)) == 1
+
+        # Don't consider tick=0 as "paused" (it means demo not loaded yet)
+        if all_same and recent[0] == 0:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"[Prediction] Tick history all 0s (demo not loaded), not paused: {recent}")
+            return False
+
+        if all_same:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"[Prediction] Pause detected - last 3 ticks identical: {recent}")
+
+        return all_same
 
     def reset(self):
         """Reset prediction state and history."""

@@ -55,9 +55,11 @@ class CS2TelnetClient(ITickSource):
         self.output_buffer: list[str] = []
         self.buffer_size = 100  # Keep last 100 lines
 
-        # Regex pattern to parse demo_info response
-        # Matches: "Currently playing 12500 of 160000 ticks"
+        # Regex patterns
+        # demo_info: "Currently playing 12500 of 160000 ticks"
         self._tick_pattern = re.compile(r"Currently playing (\d+) of \d+ ticks")
+        # demo_marktick: "Marked tick 39262"
+        self._marktick_pattern = re.compile(r"Marked tick (\d+)")
 
     async def connect(self) -> bool:
         """Establish connection to CS2 network console.
@@ -120,23 +122,26 @@ class CS2TelnetClient(ITickSource):
         return self._connected
 
     async def get_current_tick(self) -> int:
-        """Get current demo playback tick (passive).
+        """Get current demo playback tick using demo_marktick.
 
-        This method NEVER actively polls CS2. It only returns the last known tick
-        that was synced via force_sync_tick(). The prediction engine will interpolate
-        between sync points.
+        This actively polls CS2 using demo_marktick command, which is:
+        - Passive (doesn't pause demo, no choppy playback)
+        - Returns FILE tick (matches demoparser2 cache)
+        - Fast and reliable
 
         Returns:
-            int: Last known tick from most recent sync
+            int: Current tick from demo file
         """
-        return self._current_tick
+        return await self.get_tick_via_marktick()
 
     async def force_sync_tick(self) -> int:
-        """Force synchronization by actively pausing/resuming demo.
-        
+        """Force synchronization using get_demo_info().
+
         This should be used sparingly, only when we need to resync
         (e.g., after connection loss or large drift).
-        
+
+        Uses get_demo_info() which is PASSIVE (no pause/resume) and reliable.
+
         Returns:
             int: Current tick number from forced sync
         """
@@ -145,60 +150,29 @@ class CS2TelnetClient(ITickSource):
             return self._current_tick
 
         try:
-            print("[Telnet] Force syncing tick...")
-            
-            # Send demo_pause to trigger tick output
-            self.writer.write(b"demo_pause\n")
-            await self.writer.drain()
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("[Telnet] Force syncing tick via demo_info...")
 
-            # Read response
-            response = await asyncio.wait_for(
-                self._read_with_buffer(4096),
-                timeout=1.0
-            )
-            response_text = response.decode('utf-8', errors='ignore')
+            # Use get_demo_info() - passive, reliable, no freeze
+            demo_info = await self.get_demo_info()
+            current_tick = demo_info["current_tick"]
 
-            # Send demo_resume immediately to continue playback
-            self.writer.write(b"demo_resume\n")
-            await self.writer.drain()
-            
-            # Read resume response
-            try:
-                resume_response = await asyncio.wait_for(
-                    self._read_with_buffer(4096),
-                    timeout=0.5
-                )
-                response_text += resume_response.decode('utf-8', errors='ignore')
-            except asyncio.TimeoutError:
-                pass
-
-            # Parse tick
-            # Try multiple patterns as CS2 format might vary
-            patterns = [
-                re.compile(r"(?:paused|unpaused) on tick (\d+)"),  # CGameRules format
-                re.compile(r"tick\s+(\d+)"),  # Generic tick mention
-                re.compile(r"Demo tick:\s*(\d+)"),  # Demo info format
-            ]
-            
-            print(f"[Telnet] Response text: {repr(response_text[:200])}")  # Debug
-            
-            current_tick = None
-            for pattern in patterns:
-                match = pattern.search(response_text)
-                if match:
-                    current_tick = int(match.group(1))
-                    break
-
-            if current_tick:
+            # Validate tick > 0 before updating
+            if current_tick > 0:
                 self._current_tick = current_tick
+                logger.info(f"[Telnet] Force sync successful: tick {current_tick} (speed: {demo_info['speed']}x)")
                 print(f"[Telnet] Force sync successful: tick {current_tick}")
                 return current_tick
             else:
-                print(f"[Telnet] Force sync failed to parse tick from response")
-                print(f"[Telnet] Full response: {repr(response_text)}")
+                logger.warning(f"[Telnet] Force sync got invalid tick: {current_tick} (keeping previous: {self._current_tick})")
+                print(f"[Telnet] Force sync got tick 0 (demo not playing?), keeping previous tick: {self._current_tick}")
                 return self._current_tick
 
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"[Telnet] Force sync error: {e}", exc_info=True)
             print(f"[Telnet] Force sync error: {e}")
             import traceback
             traceback.print_exc()
@@ -243,6 +217,71 @@ class CS2TelnetClient(ITickSource):
     def clear_buffer(self) -> None:
         """Clear the output buffer."""
         self.output_buffer.clear()
+
+    async def get_tick_via_marktick(self) -> int:
+        """Get current tick using demo_marktick command.
+
+        This is the PREFERRED method because:
+        - demo_marktick is passive (doesn't pause demo)
+        - Returns FILE tick (matches demoparser2 cache tick)
+        - No choppy playback
+        - Fast response
+
+        Returns file tick (not playback tick), which is what demoparser2 uses.
+        No offset calculation needed!
+
+        Returns:
+            int: Current tick from demo file (0 if not playing or error)
+        """
+        if not self._connected:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug("[Telnet] Not connected, cannot get tick via marktick")
+            return self._current_tick
+
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+
+            # Send demo_marktick command
+            self.writer.write(b"demo_marktick\n")
+            await self.writer.drain()
+
+            # Read response with timeout
+            response = await asyncio.wait_for(
+                self.reader.read(1024),
+                timeout=1.0
+            )
+
+            response_text = response.decode('utf-8', errors='ignore')
+            logger.debug(f"[Telnet] demo_marktick response: {repr(response_text)}")
+
+            # Parse: "Marked tick 39262"
+            match = self._marktick_pattern.search(response_text)
+
+            if match:
+                tick = int(match.group(1))
+                logger.debug(f"[Telnet] Parsed tick from demo_marktick: {tick}")
+
+                # Update current tick if valid
+                if tick > 0:
+                    self._current_tick = tick
+
+                return tick
+            else:
+                logger.warning(f"[Telnet] Could not parse demo_marktick response: {repr(response_text)}")
+                return self._current_tick
+
+        except asyncio.TimeoutError:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("[Telnet] Timeout reading demo_marktick response")
+            return self._current_tick
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"[Telnet] Error getting tick via marktick: {e}", exc_info=True)
+            return self._current_tick
 
     async def get_demo_info(self) -> dict:
         """Get full demo playback information.

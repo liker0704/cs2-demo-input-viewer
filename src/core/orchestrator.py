@@ -20,6 +20,7 @@ from src.interfaces.demo_repository import IDemoRepository
 from src.interfaces.player_tracker import IPlayerTracker
 from src.interfaces.input_visualizer import IInputVisualizer
 from src.core.prediction_engine import PredictionEngine, SmoothPredictionEngine
+from src.core.smart_tick_sync import SmartTickSync
 
 
 class SyncEngine:
@@ -111,7 +112,7 @@ class Orchestrator:
         demo_repository: IDemoRepository,
         player_tracker: IPlayerTracker,
         visualizer: IInputVisualizer,
-        polling_interval: float = 0.25,
+        polling_interval: float = 0.5,
         render_fps: int = 60,
         tick_rate: int = 64,
         use_smooth_prediction: bool = True
@@ -123,7 +124,9 @@ class Orchestrator:
             demo_repository: Source of input data (Parser or Mock)
             player_tracker: Tracker for current player (CS2 or Mock)
             visualizer: UI overlay (PyQt6 or Mock)
-            polling_interval: Network polling frequency in seconds (default: 0.25)
+            polling_interval: Network polling frequency in seconds (default: 0.5)
+                             Research recommends 0.5s for optimal balance between
+                             accuracy and jitter reduction (was 0.25s)
             render_fps: Target rendering FPS (default: 60)
             tick_rate: Game tick rate in Hz (default: 64)
             use_smooth_prediction: Use smooth prediction engine (default: True)
@@ -148,6 +151,7 @@ class Orchestrator:
         # Components (created during initialization)
         self.sync_engine: Optional[SyncEngine] = None
         self.prediction_engine: Optional[PredictionEngine] = None
+        self.smart_tick_sync: Optional[SmartTickSync] = None  # New: combined sync + prediction with speed detection
 
         # Tasks
         self._sync_task: Optional[asyncio.Task] = None
@@ -178,29 +182,45 @@ class Orchestrator:
             if not self._current_player:
                 print("[Orchestrator] Warning: No player selected")
 
-            # Initialize sync engine (pass sync_interval instead of polling_interval)
-            self.sync_engine = SyncEngine(
+            # Initialize SmartTickSync (replaces both SyncEngine + PredictionEngine)
+            # This provides:
+            # - Tick synchronization via demo_marktick (no choppy playback)
+            # - Speed detection from tick history
+            # - Accurate pause detection
+            # - Speed-aware tick prediction
+            self.smart_tick_sync = SmartTickSync(
                 self.tick_source,
-                sync_interval=5.0  # Force sync every 5 seconds
+                tick_rate=self.tick_rate,
+                history_size=10,  # Keep 10 measurements for speed calculation
+                pause_threshold=3,  # 3 identical ticks = paused
+                speed_calculation_window=5  # Use last 5 measurements for speed
             )
-            
-            # Do initial sync to get starting tick
-            print("[Orchestrator] Performing initial synchronization...")
-            await self.sync_engine.update(force=True)
 
-            # Initialize prediction engine (basic or smooth)
+            # Do initial sync to get starting tick
+            print("[Orchestrator] Performing initial synchronization via SmartTickSync...")
+            await self.smart_tick_sync.update()
+
+            print(f"[Orchestrator] SmartTickSync initialized - "
+                  f"speed={self.smart_tick_sync.get_current_speed():.2f}x, "
+                  f"paused={self.smart_tick_sync.is_paused()}")
+
+            # Keep old components for backward compatibility if needed
+            # But SmartTickSync will be used by default
             if self.use_smooth_prediction:
-                self.prediction_engine = SmoothPredictionEngine(
-                    self.sync_engine,
-                    self.tick_rate
-                )
-                print("[Orchestrator] Using smooth prediction engine")
+                print("[Orchestrator] Using SmartTickSync (speed-aware prediction)")
             else:
+                # For compatibility, still create old sync engine
+                self.sync_engine = SyncEngine(
+                    self.tick_source,
+                    sync_interval=1.5
+                )
+                await self.sync_engine.update(force=True)
+
                 self.prediction_engine = PredictionEngine(
                     self.sync_engine,
                     self.tick_rate
                 )
-                print("[Orchestrator] Using basic prediction engine")
+                print("[Orchestrator] Using basic prediction engine (legacy mode)")
 
             # Show visualizer
             self.visualizer.show()
@@ -295,14 +315,31 @@ class Orchestrator:
         """Periodic sync with tick source.
 
         Polls the tick source at regular intervals to get the current server tick.
+        Uses SmartTickSync for speed-aware synchronization.
         Runs until stop() is called.
         """
         print("[Orchestrator] Sync loop started")
 
         while self._running:
             try:
-                # Update sync engine
-                await self.sync_engine.update()
+                # Update SmartTickSync (polls demo_marktick, calculates speed, detects pause)
+                if self.smart_tick_sync:
+                    await self.smart_tick_sync.update()
+
+                    # Log status periodically (every 10 polls)
+                    if hasattr(self, '_sync_counter'):
+                        self._sync_counter += 1
+                    else:
+                        self._sync_counter = 0
+
+                    if self._sync_counter % 10 == 0:
+                        status = self.smart_tick_sync.get_status_info()
+                        print(f"[Orchestrator] Status: tick={status['last_tick']}, "
+                              f"speed={status['current_speed']:.2f}x, "
+                              f"paused={status['is_paused']}")
+                else:
+                    # Fallback to old sync engine
+                    await self.sync_engine.update()
 
             except Exception as e:
                 print(f"[Orchestrator] Sync error: {e}")
@@ -315,7 +352,7 @@ class Orchestrator:
     async def _render_loop(self):
         """Render loop at target FPS.
 
-        Renders input visualization at the target FPS using predicted tick.
+        Renders input visualization at the target FPS using speed-aware predicted tick.
         Runs until stop() is called.
         """
         print("[Orchestrator] Render loop started")
@@ -324,21 +361,34 @@ class Orchestrator:
 
         while self._running:
             try:
-                # Get predicted tick
-                self._current_tick = self.prediction_engine.get_current_tick()
+                # Get predicted tick from SmartTickSync (speed-aware)
+                if self.smart_tick_sync:
+                    self._current_tick = self.smart_tick_sync.predict_current_tick()
+                    current_speed = self.smart_tick_sync.get_current_speed()
+                    is_paused = self.smart_tick_sync.is_paused()
+                else:
+                    # Fallback to old prediction engine
+                    self._current_tick = self.prediction_engine.get_current_tick()
+                    current_speed = 1.0
+                    is_paused = False
 
                 # Get input data for current tick and player
-                if self._current_player:
+                if self._current_player and not is_paused:
                     input_data = self.demo_repo.get_inputs(
                         self._current_tick,
                         self._current_player
                     )
 
                     # Render if we have data
+                    # Pass speed multiplier to visualizer for speed-aware rendering
                     if input_data:
+                        # Add speed metadata to input_data if visualizer supports it
+                        if hasattr(input_data, '__dict__'):
+                            input_data.playback_speed = current_speed
+
                         self.visualizer.render(input_data)
                 else:
-                    # No player selected, clear visualization
+                    # No player selected or paused, clear visualization
                     self.visualizer.render(None)
 
             except Exception as e:

@@ -20,7 +20,7 @@ Usage:
     Custom configuration:
         python src/main.py --mode prod --demo demo.dem --config my_config.json
 
-For more information, see README_USAGE.md
+For more information, see docs/USER_GUIDE.md
 """
 
 import sys
@@ -173,7 +173,7 @@ Examples:
   # Specify player manually
   python src/main.py --mode prod --demo demos/match.dem --player STEAM_1:0:123456789
 
-For more information, see README_USAGE.md
+For more information, see docs/USER_GUIDE.md
         """
     )
 

@@ -1,389 +1,76 @@
-# CS2 Demo Input Viewer
+# cs2-demo-input-viewer
 
-**Инструмент для визуализации инпутов игрока во время просмотра демо в Counter-Strike 2**
+Transparent overlay that shows which keys and mouse buttons a player was hitting while you watch a CS2 demo. Demos get chewed through offline by an ETL pass that builds an indexed cache. At playback time a separate process talks to CS2 over its telnet console, lines up the current tick (subtick-accurate), and paints the inputs on top of the game.
 
-## 🎯 Статус Проекта: ✅ ГОТОВ К ИСПОЛЬЗОВАНИЮ
+Works on Windows and Linux. macOS isn't tested and probably won't work.
 
-**Версия:** 1.1.0
-**Дата релиза:** 2024
-**Статус разработки:** Все фазы завершены (6/6)
+## Setup
 
----
+You'll need Python 3.10-3.12 and CS2 launched with `-netconport 2121 -insecure` so the overlay can read the tick from the console.
 
-## 🚀 Быстрый старт
-
-### Установка
 ```bash
-# Клонировать репозиторий
-git clone https://github.com/liker0704/cs2-demo-input-viewer.git
+git clone <repo-url>
 cd cs2-demo-input-viewer
-
-# Установить зависимости
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Режим разработки (тестирование без CS2)
+Main deps are PyQt6, demoparser2, psutil. Full list in `requirements.txt`.
+
+## Modes
+
+Three modes, picked with `--mode`. Run `python src/main.py --help` for the rest.
+
+### dev
+
+No CS2 needed. Mock data sources, fake ticks. Use it to poke at the overlay or while hacking on code.
+
 ```bash
 python src/main.py --mode dev
 ```
 
-### Автоматический режим (полностью автоматический) ⭐ НОВОЕ
-```bash
-# 1. Запустить CS2 с параметрами
-# Добавьте в параметры запуска: -netconport 2121 -insecure
+### auto
 
-# 2. Запустить визуализатор в авто-режиме
+Finds your CS2 install, hooks up to the telnet console, waits for you to type `playdemo <name>` ingame, then follows whoever you're spectating. Parses the demo and builds the cache on the fly if it isn't there yet. This is what you want 95% of the time.
+
+```bash
+# launch CS2 with -netconport 2121 -insecure first
 python src/main.py --mode auto
-
-# Всё! Автоматически обнаружит CS2, демо и игрока
 ```
 
-### Производственный режим (с ручным управлением)
+### prod
+
+Manual. You point it at a `.dem` file (and optionally a Steam ID). Cache has to exist already, so run the ETL first.
+
 ```bash
-# 1. Обработать демо-файл
-python -m src.parsers.etl_pipeline --demo match.dem --player <STEAM_ID>
-
-# 2. Запустить CS2 с параметрами
-# Добавьте в параметры запуска: -netconport 2121 -insecure
-
-# 3. Запустить визуализатор
-python src/main.py --mode prod --demo match.dem --player <STEAM_ID>
+python -m src.parsers.etl_pipeline --demo demos/match.dem
+python src/main.py --mode prod --demo demos/match.dem
+# or pin a specific player:
+python src/main.py --mode prod --demo demos/match.dem --player STEAM_1:0:123456789
 ```
 
-### Документация
-- **[Руководство пользователя](README_USAGE.md)** - Подробная инструкция по использованию
-- **[Статус проекта](PROJECT_STATUS.md)** - Детальная информация о завершении всех фаз
-- **[Документация архитектуры](docs/)** - Техническая документация для разработчиков
+## Notes
 
----
+Config lives in `config.json` (telnet host/port, polling interval, overlay position, opacity, cache dir, defaults for prod mode). Generate a fresh template:
 
-## ✨ Основные возможности
-
-✅ **Реализовано в версии 1.0.0:**
-- Визуализация клавиатуры (26 клавиш, 5 рядов)
-- Визуализация мыши (ЛКМ, ПКМ, колесико, 2 боковые кнопки)
-- Точность субтиков (0.0-1.0)
-- Оверлей 60 FPS
-- Прозрачное окно с функцией click-through
-- Синхронизация с CS2 через Telnet
-- Парсинг демо-файлов (через demoparser2)
-- Отслеживание инпутов игрока
-- Режим разработки с моками (тестирование без CS2)
-- ETL-конвейер для офлайн-обработки
-- Оптимизация кэша (30-70% сжатие)
-- Предсказание тиков с коррекцией дрейфа
-- Автоматическое переподключение
-- Настраиваемая конфигурация (JSON)
-- CLI интерфейс с несколькими режимами
-
-✨ **Новое в версии 1.1.0:**
-- Полностью автоматический режим (Auto Mode)
-- Автоматическое обнаружение установки CS2
-- Мониторинг загрузки демо в реальном времени
-- Автоматическое отслеживание наблюдаемого игрока
-- Быстрая валидация кэша (10MB + размер файла)
-- Автоматическое создание и обновление кэша
-- Нулевая ручная настройка для быстрого старта
-
----
-
-## 📊 Статистика проекта
-
-- **Всего файлов:** 62+
-- **Строк кода:** ~16,500
-- **Тесты:** 45+ (все проходят)
-- **Документация:** 10 подробных руководств
-- **Охват тестами:** >85%
-
-## 🏗️ Архитектура
-
-Проект построен на принципах **SOLID** с полным разделением ответственности:
-
-- **Phase 1:** Базовый слой (модели, интерфейсы, моки) - ✅ Завершено
-- **Phase 2:** Слой данных (ETL-конвейер, парсинг) - ✅ Завершено
-- **Phase 3:** UI слой (PyQt6 оверлей) - ✅ Завершено
-- **Phase 4:** Сетевой слой (Telnet синхронизация) - ✅ Завершено
-- **Phase 5:** Ядро интеграции (оркестратор, конфигурация) - ✅ Завершено
-- **Phase 6:** Автоматический режим (Auto Mode) - ✅ Завершено
-
-## 📈 Производительность
-
-Все целевые показатели достигнуты:
-
-| Метрика | Цель | Результат | Статус |
-|---------|------|-----------|--------|
-| Использование CPU | <2% | ~1-2% | ✅ |
-| Использование памяти | <100MB | ~80-100MB | ✅ |
-| FPS рендеринга | 60 FPS | 60 FPS стабильно | ✅ |
-| Время загрузки кэша | <100ms | <100ms | ✅ |
-| Точность предсказания | ±2 тика | ±1-2 тика | ✅ |
-
----
-
-# Техническое задание + план разработки
-
-Это финальная, переработанная версия Технического Задания. Она интегрирует результаты нашего ресерча (Hybrid Architecture, Subtick precision) и структурирована специально для команды разработки (или для тебя в роли Fullstack-инженера).
-
-Мы переходим от концепции "простого скрипта" к архитектуре **ETL (Extract, Transform, Load)** + **Real-time Runtime**.
-
------
-
-# ТЕХНИЧЕСКОЕ ЗАДАНИЕ: CS2 Subtick Input Visualizer
-
-**Версия:** 2.0 (Research Based)
-**Тип приложения:** Desktop Overlay (High-Performance)
-**Архитектура:** Hybrid (Offline ETL + Real-time Sync)
-**Основной стек:** Python 3.10+ (Core Logic/ETL), PyQt6 (UI), Telnet
-
------
-
-## 0\. База Знаний и Технические Референсы
-
-Критические источники, обязательные к изучению перед стартом.
-
-**1. Инструменты Парсинга (ETL Layer):**
-
-  * **Библиотека:** `demoparser2` (Python/Rust)
-      * *Ссылка:* [https://pypi.org/project/demoparser2/](https://pypi.org/project/demoparser2/)
-      * *Почему:* Единственный инструмент, подтверждающий извлечение `m_nButtonDownMaskPrev` и `subtick` данных.
-
-**2. Структура Данных (Source 2):**
-
-  * **UserCmd & Buttons:**
-      * *Ссылка:* [https://developer.valvesoftware.com/wiki/IN\_Buttons](https://www.google.com/search?q=https://developer.valvesoftware.com/wiki/IN_Buttons)
-      * *Маска:* `IN_ATTACK` (1), `IN_JUMP` (2), `IN_DUCK` (4), `IN_FORWARD` (8), `IN_BACK` (16), `IN_MOVELEFT` (512), `IN_MOVERIGHT` (1024).
-  * **Subtick Timing:**
-      * *Поле:* `subtick_moves.when` (Float: 0.0 - 1.0). Определяет точный момент нажатия внутри тика.
-
-**3. Консоль и Сеть:**
-
-  * **Параметры запуска:** `-netconport 2121 -insecure`
-      * *Ссылка:* [https://developer.valvesoftware.com/wiki/Command\_Line\_Options](https://developer.valvesoftware.com/wiki/Command_Line_Options)
-  * **Telnet протокол:**
-      * *Ссылка:* [https://docs.python.org/3/library/telnetlib.html](https://docs.python.org/3/library/telnetlib.html)
-
------
-
-## 1\. Архитектура Системы
-
-Система разделена на два независимых этапа для обеспечения максимальной производительности во время игры.
-
-### Этап А: Data Layer (Offline ETL)
-
-*Происходит ДО запуска просмотра демо.*
-
-1.  **Extract:** Чтение `.dem` файла с помощью `demoparser2`.
-2.  **Transform:**
-      * Фильтрация данных только для целевого игрока.
-      * Декодирование битовой маски кнопок в массив булевых значений.
-      * Учет `subtick_moves.when` для таймингов (опционально для MVP).
-3.  **Load:** Сохранение облегченного JSON (или бинарного кэша) в RAM или на диск.
-      * *Структура:* `{ Tick_ID: { keys: [W, A], subtick_offset: 0.5 } }`
-
-### Этап Б: Runtime Layer (Overlay & Sync)
-
-*Происходит ВО ВРЕМЯ просмотра.*
-
-1.  **Sync Engine:** Подключается к CS2 по Telnet, опрашивает текущий тик.
-2.  **Visualizer:** Читает готовый кэш из Этапа А и рисует интерфейс.
-
------
-
-## 2\. Спецификация Модулей
-
-### 2.1. Модуль Парсинга (Parser Service)
-
-**Задача:** Извлечь валидные инпуты из GOTV/Faceit демок.
-
-**Ключевые поля для извлечения (Python `demoparser2`):**
-
-```python
-fields = [
-    "m_nButtonDownMaskPrev", # Основной источник (Buttons)
-    "subtick_moves",         # Для точности (When)
-    "m_steamID"              # Для выбора игрока
-]
+```bash
+python src/main.py --generate-config
+cp config.example.json config.json
 ```
 
-**Алгоритм обработки маски:**
+CLI flags `--demo`, `--player`, `--debug` override whatever's in the config file.
 
-```python
-# Пример логики трансформации
-def decode_buttons(mask: int) -> list:
-    active_keys = []
-    if mask & (1 << 3): active_keys.append("FORWARD") # W
-    if mask & (1 << 9): active_keys.append("LEFT")    # A
-    # ... остальные кнопки
-    return active_keys
-```
+Gotchas worth knowing:
 
-### 2.2. Модуль Синхронизации (Telnet Client)
+- prod mode bails out if there's no cache for the demo. Run the ETL step.
+- The telnet port (2121) has to match what you put in `-netconport`. If you changed one, change the other.
+- Overlay is a click-through window. If it doesn't show up, double-check `overlay_x`/`overlay_y` aren't off-screen.
 
-**Задача:** Получить `Current Tick` из игры с минимальной задержкой.
+## Docs
 
-  * **Протокол:** TCP Telnet (`localhost:2121`).
-  * **Команда опроса:** `demo_info` (согласно ресерчу).
-  * **Частота опроса (Polling Rate):** 2–4 Гц (раз в 250–500 мс).
-  * **Парсинг ответа (Regex):**
-    Строка вида: `Currently playing 12500 of 160000 ticks`
-    Regex: `r"Currently playing (\d+) of \d+ ticks"`
+More detail in [docs/README.md](docs/README.md) (architecture, ETL, telnet protocol, auto-mode internals, etc).
 
-**Логика Предикшена (Prediction Loop):**
+## License
 
-1.  Получили `Tick 100` в момент времени `T0`.
-2.  В момент `T0 + 15мс` (без запроса к игре) -\> Рисуем `Tick 101`.
-3.  В момент `T0 + 31мс` -\> Рисуем `Tick 102`.
-4.  ...
-5.  Пришел новый запрос `Tick 108`. Если наш счетчик показывает `110` -\> Корректируем назад.
-
-### 2.3. Модуль Отрисовки (UI Overlay)
-
-**Задача:** Визуализация без лагов.
-
-  * **Технология:** PyQt6 (с аппаратным ускорением).
-  * **Свойства окна:**
-      * `FramelessWindowHint` (Без рамок).
-      * `WindowStaysOnTopHint` (Поверх всего).
-      * `WA_TranslucentBackground` (Прозрачность).
-      * `WA_TransparentForMouseEvents` (Сквозной клик).
-
------
-
-## 3\. План Реализации (Dev Stages)
-
-### Milestone 1: Data Proof (ETL Скрипт)
-
-*Цель: Убедиться, что `demoparser2` видит кнопки в твоей демке.*
-
-1.  Написать Python скрипт `extract_test.py`.
-2.  Загрузить Faceit-демку.
-3.  Вывести в консоль первые 100 тиков, где `m_nButtonDownMaskPrev > 0`.
-4.  **Результат:** Лог вида `Tick: 500 | Mask: 8 (W нажата)`.
-
-### Milestone 2: Sync Proof (Telnet Console)
-
-*Цель: Научиться читать тик из живой игры.*
-
-1.  Запустить CS2: `-netconport 2121`.
-2.  Написать скрипт `sync_test.py`.
-3.  Отправлять `demo_info` каждые 0.5 сек.
-4.  Парсить ответ Regex-ом.
-5.  **Результат:** Скрипт печатает в терминале бегущие цифры тиков синхронно с игрой.
-
-### Milestone 3: Prototype (MVP)
-
-*Цель: Соединить данные и синхронизацию.*
-
-1.  Скрипт парсит всю демку в `dict` в памяти.
-2.  Запускается цикл синхронизации.
-3.  Вместо UI пока просто `print()`:
-    `[SYNC] Tick: 12500 -> [DATA] Keys: W + A`
-
-### Milestone 4: Overlay (Visuals)
-
-*Цель: Графический интерфейс.*
-
-1.  Обернуть логику Milestone 3 в PyQt6 приложение.
-2.  Нарисовать клавиши (WASD).
-3.  Реализовать переключение стилей (Active/Inactive) на основе данных.
-
------
-
-## 4\. Безопасность и Ограничения
-
-1.  **VAC Safety:**
-      * Приложение **строго внешнее** (External).
-      * Никакого чтения памяти (`ReadProcessMemory` запрещен).
-      * Использовать флаг `-insecure` для полной гарантии безопасности аккаунта при разработке и просмотре.
-2.  **Ограничения Синхронизации:**
-      * Telnet имеет задержку (ping) 2-10 мс. Алгоритм предикшена обязателен для плавности.
-      * Если пользователь делает "Jump to tick" (Shift+F2), оверлей догонит его только через \~0.5 сек (при следующем опросе). Это нормальное поведение.
-
------
-
-## 5\. Конфигурация (Пример `config.py`)
-
-```python
-SETTINGS = {
-    # Подключение
-    "CS2_HOST": "127.0.0.1",
-    "CS2_PORT": 2121,
-    "POLLING_INTERVAL": 0.25, # 4 раза в секунду
-
-    # Данные
-    "TARGET_STEAM_ID": None,  # Если None, пытаться определить автоматически
-    
-    # Визуализация
-    "USE_SUBTICK_INTERPOLATION": False, # Включить для MVP v2
-    "OVERLAY_OPACITY": 0.8
-}
-```
-
------
-# План разработки
-Мы будем использовать модульный подход, чтобы разработка разных частей (парсинг, UI, сеть) могла вестись параллельно и не блокировала друг друга. Ключевой принцип — **мокирование** (Mocking) внешних зависимостей.
-
-Вот как мы разделим процесс разработки на 4 этапа.
-
----
-
-# Методология Разработки (Workflow Methodology)
-
-## I. Подготовка и Инструменты
-
-1.  **Контроль версий:** Используется Git. Каждая новая фича или этап разработки ведется в отдельной ветке.
-2.  **Среда:** Создать изолированную среду Python (`venv` или `conda`).
-3.  **Архитектура:** Строго придерживаться принципа разделения ответственности (Separation of Concerns) и интерфейсов (`ITickSource`, `IDemoRepository`), как указано в ТЗ.
-
----
-
-## II. Этап 1: Data Layer & Foundation (Offline)
-
-*Цель: Создать основу для данных, не зависящую от запущенного клиента CS2.*
-
-| Задача | Описание | Инструменты | Критерий готовности (Deliverable) |
-| :--- | :--- | :--- | :--- |
-| **1.1 Структура** | Создать общую структуру проекта и определить классы (Interfaces) для `ITickSource`, `IDemoRepository`. | Python, Pydantic/dataclasses | Файлы интерфейсов (`.py` со `class ABC`). |
-| **1.2 ETL Script** | Написать скрипт для парсинга, который: 1) Читает `.dem` файл. 2) Извлекает тики и маску кнопок. 3) Сохраняет результат в `cache.json` (индексированный по тикам). | `demoparser2` | Файл `cache.json` (например, на 10 раундов демо), содержащий декодированные инпуты. |
-| **1.3 Mock Data** | Реализовать класс `MockDemoRepository`. Он должен просто читать `cache.json`, имитируя работу с реальным парсером. | Python | Модуль `MockDemoRepository` возвращает данные по тику. |
-| **1.4 Mock Sync** | Реализовать класс **`MockTickSource`**. Он должен возвращать текущий тик, используя только системный таймер (`time.time() * 64`). | Python | Класс `MockTickSource` стабильно увеличивает тик, имитируя игру. |
-
----
-
-## III. Этап 2: Presentation & Core Logic (UI First)
-
-*Цель: Собрать работающий интерфейс с плавной анимацией, используя Mock-данные из Этапа 1.*
-
-| Задача | Описание | Инструменты | Критерий готовности (Deliverable) |
-| :--- | :--- | :--- | :--- |
-| **2.1 UI Shell** | Создать окно PyQt6 с необходимыми флагами (Прозрачность, Поверх всех окон). | PyQt6 | Пустое прозрачное окно, способное принимать клики "сквозь себя". |
-| **2.2 Input Widgets** | Сверстать все виджеты кнопок (WASD, MOUSE1, DUCK). | PyQt6 (QSS/CSS) | Визуально привлекательный макет клавиатуры. |
-| **2.3 Prediction Engine**| Интегрировать `MockTickSource` и `MockDemoRepository` в основной цикл отрисовки. Реализовать логику Предикшена (см. ТЗ п. 2.2) для плавной анимации. | Python, PyQt6 Timer | Отдельное приложение, в котором кнопки мигают, имитируя игру. |
-| **2.4 Subtick Logic** | Добавить в цикл отрисовки логику сглаживания: если кнопка нажата всего на 1-2 тика, удерживать ее активной в UI минимум 50 мс (`Minimum Display Time`). | Python, PyQt6 | Кнопки не "флипают" (не мерцают). |
-
----
-
-## IV. Этап 3: Network & Final Integration (Online)
-
-*Цель: Заменить все Mock-классы реальными коннекторами, интегрировать с CS2.*
-
-| Задача | Описание | Инструменты | Критерий готовности (Deliverable) |
-| :--- | :--- | :--- | :--- |
-| **3.1 Telnet Client** | Реализовать класс `CS2TelnetConnector` (наследуется от `ITickSource`). Добавить логику переподключения при разрыве связи. | Python (`telnetlib` или `asyncio`) | Стабильный коннектор, способный отправлять команды. |
-| **3.2 Regex Parsing** | Реализовать функцию парсинга ответа Telnet (команда `demo_info`) с использованием Regex для извлечения текущего тика. | Python (`re` module) | Функция `get_current_tick()` возвращает номер тика без ошибок. |
-| **3.3 Final Assembly**| Заменить Mock-классы на реальные в главном модуле: `tick_source = CS2TelnetConnector()` и `repo = RealDemoParser()`. | Python | Приложение успешно загружает реальную демку и подключается к запущенному CS2. |
-
----
-
-## V. Этап 4: QA, Optimization & Release
-
-*Цель: Повышение стабильности, устранение задержек и удобство для конечного пользователя.*
-
-| Задача | Описание | Инструменты | Критерий готовности (Deliverable) |
-| :--- | :--- | :--- | :--- |
-| **4.1 Stress Test** | Тестирование под нагрузкой: попробовать перемотать демо (Shift+F2) и убедиться, что приложение корректирует тик без сбоев (Fast Correction). | Тестирование "черного ящика" | Приложение справляется с перемоткой. |
-| **4.2 User Launcher** | Создать GUI для выбора демо-файла и игрока перед запуском оверлея. Добавить чекбокс "Lock/Unlock" для перемещения оверлея. | PyQt6 | Удобный, простой интерфейс запуска. |
-| **4.3 Optimization** | Провести профилирование кода (Profiler) для поиска узких мест (если оверлей дает лаги). | Профайлер Python | Приложение потребляет < 2% CPU во время работы. |
-| **4.4 Документация** | Написать `README.md` с инструкциями для пользователя (как запустить CS2 с `-netconport`). | Markdown | Готовая документация для пользователя. |
-
----
+MIT, see [LICENSE](LICENSE).

@@ -1,8 +1,8 @@
-# Mock Data Generator Usage Guide
+# Mock Data Generator
 
-## Overview
-
-The `mock_data_generator.py` module generates realistic test data for CS2 Input Visualizer. It simulates actual CS2 gameplay patterns including movement, shooting, jumping, crouching, and utility usage.
+The `mock_data_generator.py` module generates realistic test data for the CS2
+Input Visualizer. It simulates actual CS2 gameplay patterns including
+movement, shooting, jumping, crouching, and utility usage.
 
 ## Quick Start
 
@@ -37,32 +37,36 @@ python -m src.parsers.mock_data_generator \
 
 ## Features
 
-### 1. Realistic Movement Patterns
+### Realistic Movement Patterns
 
 The generator uses a state machine to create believable movement sequences:
+
 - **Forward movement** (W): Held for 0.5-1.5 seconds
 - **Strafing** (A/D): Quick directional changes
 - **Counter-strafing**: Natural transitions (W → W+D → D)
 - **Idle periods**: Realistic pauses in movement
 
-### 2. Shooting Patterns
+### Shooting Patterns
 
 Simulates different shooting behaviors:
+
 - **Burst fire**: 2-5 bullets (most common)
 - **Tap shooting**: 1-2 bullets
 - **Occasional sprays**: 6-10 bullets
 - **Realistic timing**: Based on typical fire rates
 
-### 3. Subtick Precision
+### Subtick Precision
 
-Each input has a subtick offset (0.0-1.0) indicating when during the tick it was pressed:
+Each input has a subtick offset (0.0-1.0) indicating when during the tick it
+was pressed:
+
 - Movement keys: Usually 0.0 (tick start)
 - Mouse clicks: 0.1-0.5 (reaction delay)
 - Utility keys: Random timing within tick
 
-### 4. Additional Actions
+### Additional Actions
 
-- **Jumping** (SPACE): Occurs while moving forward (2% chance)
+- **Jumping** (SPACE): Occurs while moving forward (~2% chance)
 - **Crouching** (CTRL): Often combined with shooting
 - **Utility** (E, R, TAB, SHIFT): Occasional realistic usage
 
@@ -153,14 +157,17 @@ assert cache3['inputs'] != cache4['inputs']  # True (probably)
 
 ## Examples
 
-See `/home/user/cs2-demo-input-viewer/examples/generate_mock_data_example.py` for comprehensive examples including:
+See `examples/generate_mock_data_example.py` for comprehensive examples
+including:
+
 - Basic generation
 - Different duration demos
-- Integration with MockDemoRepository
+- Integration with `MockDemoRepository`
 - Reproducibility testing
 - Pattern analysis
 
 Run examples:
+
 ```bash
 cd examples
 python generate_mock_data_example.py
@@ -169,6 +176,7 @@ python generate_mock_data_example.py
 ## Performance
 
 The generator is optimized for sparse storage:
+
 - Only stores ticks with actual input (not idle ticks)
 - Typical compression: 15-30% reduction
 - Example: 5000 ticks → ~3500-4250 stored entries
@@ -176,6 +184,7 @@ The generator is optimized for sparse storage:
 ## Pattern Quality
 
 Typical distribution for 5000 ticks (~78 seconds at 64 tick rate):
+
 - **Movement**: 70-80% of active ticks
 - **Shooting**: 10-15% of active ticks
 - **Jumping**: 1-2% of active ticks
@@ -190,13 +199,15 @@ Typical distribution for 5000 ticks (~78 seconds at 64 tick rate):
 Generate complete mock cache data.
 
 **Parameters:**
+
 - `num_ticks` (int): Number of ticks to generate (default: 5000)
 - `output_path` (str, optional): Path to save JSON file
 - `seed` (int, optional): Random seed for reproducibility
-- `tick_rate` (int): Server tick rate - 64 or 128 (default: 64)
+- `tick_rate` (int): Server tick rate — 64 or 128 (default: 64)
 - `player_name` (str): Player display name (default: "TestPlayer")
 
 **Returns:**
+
 - `dict`: Complete cache structure with metadata and inputs
 
 ### `generate_subtick_offsets()`
@@ -204,11 +215,13 @@ Generate complete mock cache data.
 Generate subtick timing offsets for inputs.
 
 **Parameters:**
+
 - `keys` (List[str]): Keyboard keys pressed
 - `mouse` (List[str]): Mouse buttons pressed
 - `seed` (int, optional): Random seed
 
 **Returns:**
+
 - `dict`: Mapping of inputs to subtick offsets (0.0-1.0)
 
 ### `RealisticPatternGenerator`
@@ -216,6 +229,7 @@ Generate subtick timing offsets for inputs.
 Main pattern generation class.
 
 **Methods:**
+
 - `generate_movement_pattern(tick)`: Generate WASD movement
 - `generate_shooting_pattern(tick)`: Generate shooting bursts
 - `generate_utility_pattern(tick)`: Generate utility key presses
@@ -224,8 +238,8 @@ Main pattern generation class.
 
 ## Notes
 
-- The generator creates realistic patterns, not random noise
-- All patterns are based on common CS2 gameplay mechanics
-- Subtick timing adds precision for visualization
-- Compatible with existing MockDemoRepository implementation
-- No external dependencies beyond Python standard library
+- The generator creates realistic patterns, not random noise.
+- All patterns are based on common CS2 gameplay mechanics.
+- Subtick timing adds precision for visualization.
+- Compatible with existing `MockDemoRepository` implementation.
+- No external dependencies beyond the Python standard library.
